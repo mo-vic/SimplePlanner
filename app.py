@@ -3,6 +3,7 @@ import json
 
 import numpy as np
 
+from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import QPointF
 from PyQt5.QtGui import QPolygonF
 from PyQt5.QtGui import QPen, QBrush, QColor
@@ -36,36 +37,6 @@ class GraphicsScene(QGraphicsScene):
         x_interval = np.linspace(0.0, 1024.0, 40)
         y_interval = np.linspace(0.0, 1024.0, 40)
 
-        x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
-        y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
-        dots = np.meshgrid(x_dot_coor, y_dot_coor)
-        self.num_x_coor = len(x_dot_coor)
-        self.num_y_coor = len(y_dot_coor)
-
-        radius = 3
-        diameter = 6
-        # for grid collision detection
-        self.blockItem = QGraphicsRectItem()
-        blockWidth = x_interval[1] - x_interval[0]
-        blockHeight = y_interval[1] - y_interval[0]
-        self.blockItem.setRect(0, 0, blockWidth, blockHeight)
-        self.addItem(self.blockItem)
-        for i in range(self.num_x_coor):
-            for j in range(self.num_y_coor):
-                x = dots[0][i, j]
-                y = dots[1][i, j]
-                isValid = self.checkCollision(x - blockWidth / 2.0, y - blockHeight / 2.0)
-                dotItem = QGraphicsEllipseItem()
-                if isValid:
-                    dotItem.setPen(QPen(QColor(0, 255, 0)))
-                    dotItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
-                else:
-                    dotItem.setPen(QPen(QColor(255, 0, 0)))
-                    dotItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
-                dotItem.setPos(QPointF(0, 0))
-                dotItem.setRect(x - radius, y - radius, diameter, diameter)
-                self.addItem(dotItem)
-
         # draw horizontal line
         for y_coor in y_interval:
             lineItem = QGraphicsLineItem()
@@ -80,20 +51,59 @@ class GraphicsScene(QGraphicsScene):
             lineItem.setLine(x_coor, y_interval[0], x_coor, y_interval[-1])
             self.addItem(lineItem)
 
-        self.removeItem(self.blockItem)
+        x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
+        y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
+        self.dots = np.meshgrid(x_dot_coor, y_dot_coor)
+        self.num_x_coor = len(x_dot_coor)
+        self.num_y_coor = len(y_dot_coor)
+
+        # for grid collision detection
+        self.blockItem = QGraphicsRectItem()
+        self.blockWidth = x_interval[1] - x_interval[0]
+        self.blockHeight = y_interval[1] - y_interval[0]
+        self.blockItem.setRect(0, 0, self.blockWidth, self.blockHeight)
+        self.addItem(self.blockItem)
 
     def checkCollision(self, x, y):
         self.blockItem.setX(x)
         self.blockItem.setY(y)
-        if len(self.blockItem.collidingItems()) > 0:
+        if len(self.blockItem.collidingItems()) > 4:
             return False
         else:
             return True
+
+    def runGridCollision(self, counter):
+        i = counter // self.num_x_coor
+        j = counter % self.num_x_coor
+
+        if i >= self.num_y_coor:
+            self.removeItem(self.blockItem)
+            return True
+
+        radius = 3
+        diameter = 6
+        x = self.dots[0][i, j]
+        y = self.dots[1][i, j]
+        isValid = self.checkCollision(x - self.blockWidth / 2.0, y - self.blockHeight / 2.0)
+        dotItem = QGraphicsEllipseItem()
+        if isValid:
+            dotItem.setPen(QPen(QColor(0, 255, 0)))
+            dotItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
+        else:
+            dotItem.setPen(QPen(QColor(255, 0, 0)))
+            dotItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
+        dotItem.setPos(QPointF(0, 0))
+        dotItem.setRect(x - radius, y - radius, diameter, diameter)
+        self.addItem(dotItem)
+
+        return False
 
 
 class CentralWidget(QWidget):
     def __init__(self):
         super(CentralWidget, self).__init__()
+        self.counter = 0
+
         self.setLayout(QHBoxLayout())
 
         self.scene = GraphicsScene()
@@ -102,12 +112,28 @@ class CentralWidget(QWidget):
 
         self.layout().addWidget(self.view)
 
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.checkGridCollision)
+        self.timer.setInterval(0.0)
+
+    def checkGridCollision(self):
+        isFinished = self.scene.runGridCollision(self.counter)
+        if isFinished:
+            self.counter = 0
+            self.timer.stop()
+        else:
+            self.counter += 1
+
+    def startDetection(self):
+        self.timer.start()
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         self.view = CentralWidget()
         self.setCentralWidget(self.view)
+        self.view.startDetection()
         self.statusBar().showMessage("Ready!")
 
 
