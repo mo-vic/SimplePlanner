@@ -36,20 +36,6 @@ class GraphicsScene(QGraphicsScene):
         x_interval = np.linspace(0.0, 1024.0, 40)
         y_interval = np.linspace(0.0, 1024.0, 40)
 
-        # draw horizontal line
-        for y_coor in y_interval:
-            lineItem = QGraphicsLineItem()
-            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
-            lineItem.setLine(x_interval[0], y_coor, x_interval[-1], y_coor)
-            self.addItem(lineItem)
-
-        # draw vertical line
-        for x_coor in x_interval:
-            lineItem = QGraphicsLineItem()
-            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
-            lineItem.setLine(x_coor, y_interval[0], x_coor, y_interval[-1])
-            self.addItem(lineItem)
-
         x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
         y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
         dots = np.meshgrid(x_dot_coor, y_dot_coor)
@@ -75,12 +61,26 @@ class GraphicsScene(QGraphicsScene):
             dotItem.setRect(x - radius, y - radius, diameter, diameter)
             self.addItem(dotItem)
 
+        # draw horizontal line
+        for y_coor in y_interval:
+            lineItem = QGraphicsLineItem()
+            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
+            lineItem.setLine(x_interval[0], y_coor, x_interval[-1], y_coor)
+            self.addItem(lineItem)
+
+        # draw vertical line
+        for x_coor in x_interval:
+            lineItem = QGraphicsLineItem()
+            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
+            lineItem.setLine(x_coor, y_interval[0], x_coor, y_interval[-1])
+            self.addItem(lineItem)
+
         self.removeItem(self.blockItem)
 
     def checkCollision(self, x, y):
         self.blockItem.setX(x)
         self.blockItem.setY(y)
-        if len(self.blockItem.collidingItems()) > 4:
+        if len(self.blockItem.collidingItems()) > 0:
             return False
         else:
             return True
