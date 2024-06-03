@@ -39,6 +39,8 @@ class GraphicsScene(QGraphicsScene):
         x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
         y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
         dots = np.meshgrid(x_dot_coor, y_dot_coor)
+        self.num_x_coor = len(x_dot_coor)
+        self.num_y_coor = len(y_dot_coor)
 
         radius = 3
         diameter = 6
@@ -48,18 +50,21 @@ class GraphicsScene(QGraphicsScene):
         blockHeight = y_interval[1] - y_interval[0]
         self.blockItem.setRect(0, 0, blockWidth, blockHeight)
         self.addItem(self.blockItem)
-        for x, y in zip(dots[0].flatten(), dots[1].flatten()):
-            isValid = self.checkCollision(x - blockWidth / 2.0, y - blockHeight / 2.0)
-            dotItem = QGraphicsEllipseItem()
-            if isValid:
-                dotItem.setPen(QPen(QColor(0, 255, 0)))
-                dotItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
-            else:
-                dotItem.setPen(QPen(QColor(255, 0, 0)))
-                dotItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
-            dotItem.setPos(QPointF(0, 0))
-            dotItem.setRect(x - radius, y - radius, diameter, diameter)
-            self.addItem(dotItem)
+        for i in range(self.num_x_coor):
+            for j in range(self.num_y_coor):
+                x = dots[0][i, j]
+                y = dots[1][i, j]
+                isValid = self.checkCollision(x - blockWidth / 2.0, y - blockHeight / 2.0)
+                dotItem = QGraphicsEllipseItem()
+                if isValid:
+                    dotItem.setPen(QPen(QColor(0, 255, 0)))
+                    dotItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
+                else:
+                    dotItem.setPen(QPen(QColor(255, 0, 0)))
+                    dotItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
+                dotItem.setPos(QPointF(0, 0))
+                dotItem.setRect(x - radius, y - radius, diameter, diameter)
+                self.addItem(dotItem)
 
         # draw horizontal line
         for y_coor in y_interval:
