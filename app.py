@@ -346,7 +346,11 @@ class GraphicsScene(QGraphicsScene):
         for lineItem in self.path:
             self.removeItem(lineItem)
 
+        for textItem in self.textItems:
+            self.removeItem(textItem)
+
         self.path.clear()
+        self.textItems.clear()
 
         que = PriorityQueue()
         que.put((0, self.start))
@@ -354,6 +358,8 @@ class GraphicsScene(QGraphicsScene):
         transition = dict()
         visited = np.zeros_like(self.grid)
         visited[self.start[0], self.start[1]] = 1
+
+        visitedOrder = 0
         while not que.empty():
             _, node = que.get()
 
@@ -362,6 +368,14 @@ class GraphicsScene(QGraphicsScene):
                 return True
 
             a, b = node
+
+            textItem = QGraphicsTextItem()
+            textItem.setPlainText(str(visitedOrder))
+            textItem.setPos(self.dots[0][a, b] - self.blockWidth / 2, self.dots[1][a, b] - self.blockHeight / 2)
+            self.addItem(textItem)
+            self.textItems.append(textItem)
+
+            visitedOrder += 1
 
             neighbors = [(a - 1, b - 1), (a - 1, b), (a - 1, b + 1),
                          (a, b - 1), (a, b + 1),
