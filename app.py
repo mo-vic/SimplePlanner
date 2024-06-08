@@ -99,7 +99,7 @@ class GraphicsScene(QGraphicsScene):
             self.goalItem.setPos(QPointF(0, 0))
             self.goalItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
 
-    def checkCollision(self, x, y):
+    def checkBlockCollision(self, x, y):
         self.blockItem.setX(x)
         self.blockItem.setY(y)
         if len(self.blockItem.collidingItems()) > 4:
@@ -107,7 +107,7 @@ class GraphicsScene(QGraphicsScene):
         else:
             return True
 
-    def runGridCollision(self, counter):
+    def runGridCollisionCheck(self, counter):
         i = counter // self.num_x_coor
         j = counter % self.num_x_coor
 
@@ -121,7 +121,7 @@ class GraphicsScene(QGraphicsScene):
 
         x = self.dots[0][i, j]
         y = self.dots[1][i, j]
-        isValid = self.checkCollision(x - self.blockWidth / 2.0, y - self.blockHeight / 2.0)
+        isValid = self.checkBlockCollision(x - self.blockWidth / 2.0, y - self.blockHeight / 2.0)
 
         if isValid:
             self.grid[i, j] = 0
@@ -165,11 +165,11 @@ class GraphicsScene(QGraphicsScene):
             elif self.algorithm == "Greedy":
                 print(self.runGreedy())
             elif self.algorithm == "AStar":
-                print(self.runAStar())
+                print(self.runAStarOnGrid())
             else:
                 raise NotImplementedError
 
-    def drawPath(self, transition):
+    def drawPathOnGrid(self, transition):
         traceNode = self.goal
         while traceNode in transition:
             preNode = transition[traceNode]
@@ -212,7 +212,7 @@ class GraphicsScene(QGraphicsScene):
 
             numCurrentLayer -= 1
             if node == self.goal:
-                self.drawPath(transition)
+                self.drawPathOnGrid(transition)
 
                 maxValue = 0
                 for colormapItem in self.colormapItems:
@@ -292,7 +292,7 @@ class GraphicsScene(QGraphicsScene):
             node = que.pop()
 
             if node == self.goal:
-                self.drawPath(transition)
+                self.drawPathOnGrid(transition)
 
                 maxValue = 0
                 for colormapItem in self.colormapItems:
@@ -370,7 +370,7 @@ class GraphicsScene(QGraphicsScene):
             _, node = que.get()
 
             if node == self.goal:
-                self.drawPath(transition)
+                self.drawPathOnGrid(transition)
 
                 maxValue = 0
                 for colormapItem in self.colormapItems:
@@ -425,7 +425,7 @@ class GraphicsScene(QGraphicsScene):
 
         return False
 
-    def runAStar(self):
+    def runAStarOnGrid(self):
         for lineItem in self.path:
             self.removeItem(lineItem)
 
@@ -457,7 +457,7 @@ class GraphicsScene(QGraphicsScene):
                 continue
 
             if node == self.goal:  # if no more nodes with priority higher than this node, the optimal path was found
-                self.drawPath(transition)
+                self.drawPathOnGrid(transition)
 
                 maxValue = 0
                 for colormapItem in self.colormapItems:
@@ -562,7 +562,7 @@ class CentralWidget(QWidget):
         self.timer.setInterval(0.0)
 
     def checkGridCollision(self):
-        isFinished = self.scene.runGridCollision(self.counter)
+        isFinished = self.scene.runGridCollisionCheck(self.counter)
         if isFinished:
             self.counter = 0
             self.timer.stop()
