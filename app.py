@@ -349,8 +349,12 @@ class GraphicsScene(QGraphicsScene):
         for textItem in self.textItems:
             self.removeItem(textItem)
 
+        for colormapItem in self.colormapItems:
+            self.removeItem(colormapItem)
+
         self.path.clear()
         self.textItems.clear()
+        self.colormapItems.clear()
 
         que = PriorityQueue()
         que.put((0, self.start))
@@ -365,21 +369,45 @@ class GraphicsScene(QGraphicsScene):
 
             if node == self.goal:
                 self.drawPath(transition)
+
+                maxValue = 0
+                for colormapItem in self.colormapItems:
+                    if colormapItem.data(0) > maxValue:
+                        maxValue = colormapItem.data(0)
+
+                for colormapItem in self.colormapItems:
+                    colormapItem.setPen(QPen(QColor(0, 0, 0), 2))
+                    brushColor = list(cm.jet(int(colormapItem.data(0) / maxValue * 255)))
+                    brushColor[0] *= 255
+                    brushColor[1] *= 255
+                    brushColor[2] *= 255
+                    brushColor[3] = 200
+                    colormapItem.setZValue(-1)
+                    colormapItem.setBrush(QBrush(QColor(*brushColor)))
+                    self.addItem(colormapItem)
+
                 return True
 
             a, b = node
 
-            textItem = QGraphicsTextItem()
-            textItem.setPlainText(str(visitedOrder))
-            textItem.setPos(self.dots[0][a, b] - self.blockWidth / 2, self.dots[1][a, b] - self.blockHeight / 2)
-            self.addItem(textItem)
-            self.textItems.append(textItem)
+            if visitedOrder > 0:
+                textItem = QGraphicsTextItem()
+                textItem.setPlainText(str(visitedOrder))
+                textItem.setPos(self.dots[0][a, b] - self.blockWidth / 2, self.dots[1][a, b] - self.blockHeight / 2)
+                self.addItem(textItem)
+                self.textItems.append(textItem)
 
-            visitedOrder += 1
+                colormapItem = QGraphicsRectItem()
+                colormapItem.setRect(self.dots[0][a, b] - self.blockWidth / 2, self.dots[1][a, b] - self.blockHeight / 2
+                                     , self.blockWidth, self.blockHeight)
+                colormapItem.setData(0, visitedOrder)
+                self.colormapItems.append(colormapItem)
 
             neighbors = [(a - 1, b - 1), (a - 1, b), (a - 1, b + 1),
                          (a, b - 1), (a, b + 1),
                          (a + 1, b - 1), (a + 1, b), (a + 1, b + 1)]
+
+            visitedOrder += 1
 
             for i, j in neighbors:
                 if 0 <= i < self.num_y_coor and 0 <= j < self.num_x_coor:
