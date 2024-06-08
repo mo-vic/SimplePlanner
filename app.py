@@ -590,8 +590,10 @@ if __name__ == '__main__':
 
     parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS", "DFS", "Greedy", "AStar"], help="Planning algorithm.")
 
-    # Graph Search Based Methods (BFS, DFS, Greedy, AStar)
+    # Common
     parser.add_argument("--radius", type=float, default=6, help="Radius for the start and goal dot.")
+
+    # Graph Search Based Methods (BFS, DFS, Greedy, AStar)
     parser.add_argument("--num_horizontal_grid", type=int, default=40, help="Number of grid for each row.")
     parser.add_argument("--num_vertical_grid", type=int, default=40, help="Number of grid for each column.")
 
