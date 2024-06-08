@@ -2,6 +2,7 @@ import sys
 import json
 import argparse
 from queue import Queue
+from collections import deque
 
 import numpy as np
 from matplotlib import cm
@@ -53,7 +54,7 @@ class GraphicsScene(QGraphicsScene):
             polygon.setBrush(QBrush(QColor(0, 0, 0, 128)))
             self.addItem(polygon)
 
-        if self.algorithm in ["BFS"]:
+        if self.algorithm in ["BFS", "DFS"]:
             x_interval = np.linspace(0.0, 1024.0, self.num_horizontal_grid)
             y_interval = np.linspace(0.0, 1024.0, self.num_vertical_grid)
 
@@ -133,7 +134,7 @@ class GraphicsScene(QGraphicsScene):
         x = event.scenePos().x()
         y = event.scenePos().y()
 
-        if self.algorithm in ["BFS"]:
+        if self.algorithm in ["BFS", "DFS"]:
             i = int(y // self.blockHeight)
             j = int(x // self.blockWidth)
             print(event.scenePos().x(), event.scenePos().y())
@@ -159,6 +160,8 @@ class GraphicsScene(QGraphicsScene):
         if self.initFinished:
             if self.algorithm == "BFS":
                 print(self.runBFS())
+            elif self.algorithm == "DFS":
+                print(self.runDFS())
             else:
                 raise NotImplementedError
 
@@ -259,6 +262,43 @@ class GraphicsScene(QGraphicsScene):
 
         return False
 
+    def runDFS(self):
+        for lineItem in self.path:
+            self.removeItem(lineItem)
+
+        self.path.clear()
+
+        que = deque()
+        que.append(self.start)
+
+        transition = dict()
+        visited = np.zeros_like(self.grid)
+        visited[self.start[0], self.start[1]] = 1
+        while len(que) > 0:
+            node = que.pop()
+
+            if node == self.goal:
+                self.drawPath(transition)
+
+                return True
+
+            a, b = node
+
+            neighbors = [(a - 1, b - 1), (a - 1, b), (a - 1, b + 1),
+                         (a, b - 1), (a, b + 1),
+                         (a + 1, b - 1), (a + 1, b), (a + 1, b + 1)]
+
+            for i, j in neighbors:
+                if 0 <= i < self.num_y_coor and 0 <= j < self.num_x_coor:
+                    if visited[i, j] == 1 or self.grid[i][j] == 1:
+                        continue
+                    else:
+                        que.append((i, j))
+                        visited[i, j] = 1
+                        transition[(i, j)] = (a, b)
+
+        return False
+
 
 class CentralWidget(QWidget):
     def __init__(self, args):
@@ -274,7 +314,7 @@ class CentralWidget(QWidget):
         self.layout().addWidget(self.view)
 
         self.timer = QTimer(self)
-        if args.algorithm in ["BFS"]:
+        if args.algorithm in ["BFS", "DFS"]:
             self.timer.timeout.connect(self.checkGridCollision)
         else:
             raise NotImplementedError
@@ -297,7 +337,7 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__()
         self.view = CentralWidget(args=args)
         self.setCentralWidget(self.view)
-        if args.algorithm in ["BFS"]:
+        if args.algorithm in ["BFS", "DFS"]:
             self.view.startDetection()
         else:
             raise NotImplementedError
@@ -307,9 +347,9 @@ class MainWindow(QMainWindow):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Simple Planner Animation.")
 
-    parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS"], help="Planning algorithm.")
+    parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS", "DFS"], help="Planning algorithm.")
 
-    # Graph Search Based Methods (BFS)
+    # Graph Search Based Methods (BFS, DFS)
     parser.add_argument("--radius", type=float, default=6, help="Radius for the start and goal dot.")
     parser.add_argument("--num_horizontal_grid", type=int, default=40, help="Number of grid for each row.")
     parser.add_argument("--num_vertical_grid", type=int, default=40, help="Number of grid for each column.")
