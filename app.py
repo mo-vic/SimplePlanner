@@ -3,6 +3,7 @@ import json
 from queue import Queue
 
 import numpy as np
+from matplotlib import cm
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
@@ -30,6 +31,7 @@ class GraphicsScene(QGraphicsScene):
 
         self.path = []
         self.textItems = []
+        self.colormapItems = []
 
         with open("canvas.json", 'r') as f:
             json_content = json.load(f)
@@ -150,8 +152,12 @@ class GraphicsScene(QGraphicsScene):
         for textItem in self.textItems:
             self.removeItem(textItem)
 
+        for colormapItem in self.colormapItems:
+            self.removeItem(colormapItem)
+
         self.path.clear()
         self.textItems.clear()
+        self.colormapItems.clear()
 
         que = Queue()
         que.put(self.start)
@@ -181,15 +187,38 @@ class GraphicsScene(QGraphicsScene):
                     self.addItem(lineItem)
                     traceNode = (i, j)
 
+                maxValue = 0
+                for colormapItem in self.colormapItems:
+                    if colormapItem.data(0) > maxValue:
+                        maxValue = colormapItem.data(0)
+
+                for colormapItem in self.colormapItems:
+                    colormapItem.setPen(QPen(QColor(0, 0, 0), 2))
+                    brushColor = list(cm.jet(int(colormapItem.data(0) / maxValue * 255)))
+                    brushColor[0] *= 255
+                    brushColor[1] *= 255
+                    brushColor[2] *= 255
+                    brushColor[3] = 200
+                    colormapItem.setZValue(-1)
+                    colormapItem.setBrush(QBrush(QColor(*brushColor)))
+                    self.addItem(colormapItem)
+
                 return True
 
             a, b = node
 
-            textItem = QGraphicsTextItem()
-            textItem.setPlainText(str(layerCounter))
-            textItem.setPos(self.dots[0][b, a] - self.blockWidth / 2, self.dots[1][b, a] - self.blockHeight / 2)
-            self.addItem(textItem)
-            self.textItems.append(textItem)
+            if layerCounter > 0:
+                textItem = QGraphicsTextItem()
+                textItem.setPlainText(str(layerCounter))
+                textItem.setPos(self.dots[0][b, a] - self.blockWidth / 2, self.dots[1][b, a] - self.blockHeight / 2)
+                self.addItem(textItem)
+                self.textItems.append(textItem)
+
+                colormapItem = QGraphicsRectItem()
+                colormapItem.setRect(self.dots[0][b, a] - self.blockWidth / 2, self.dots[1][b, a] - self.blockHeight / 2
+                                     , self.blockWidth, self.blockHeight)
+                colormapItem.setData(0, layerCounter)
+                self.colormapItems.append(colormapItem)
 
             neighbors = [(a, b - 1), (a, b + 1), (a - 1, b), (a + 1, b),
                          (a - 1, b - 1), (a - 1, b + 1), (a + 1, b - 1),  (a + 1, b + 1)]
