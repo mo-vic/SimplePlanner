@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import QMainWindow
 from PyQt5.QtWidgets import QGraphicsView
 from PyQt5.QtWidgets import QGraphicsScene
 from PyQt5.QtWidgets import QHBoxLayout
-from PyQt5.QtWidgets import QGraphicsPolygonItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsEllipseItem
+from PyQt5.QtWidgets import QGraphicsPolygonItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsEllipseItem, QGraphicsTextItem
 from PyQt5.QtWidgets import QApplication
 
 
@@ -29,6 +29,7 @@ class GraphicsScene(QGraphicsScene):
         self.initFinished = False
 
         self.path = []
+        self.textItems = []
 
         with open("canvas.json", 'r') as f:
             json_content = json.load(f)
@@ -146,7 +147,11 @@ class GraphicsScene(QGraphicsScene):
         for lineItem in self.path:
             self.removeItem(lineItem)
 
+        for textItem in self.textItems:
+            self.removeItem(textItem)
+
         self.path.clear()
+        self.textItems.clear()
 
         que = Queue()
         que.put(self.start)
@@ -154,9 +159,15 @@ class GraphicsScene(QGraphicsScene):
         transition = dict()
         visited = np.zeros_like(self.grid)
         visited[self.start[0], self.start[1]] = 1
+
+        numCurrentLayer = 1
+        numNextLayer = 0
+        layerCounter = 0
+
         while not que.empty():
             node = que.get()
 
+            numCurrentLayer -= 1
             if node == self.goal:
                 traceNode = self.goal
                 while traceNode in transition:
@@ -174,6 +185,12 @@ class GraphicsScene(QGraphicsScene):
 
             a, b = node
 
+            textItem = QGraphicsTextItem()
+            textItem.setPlainText(str(layerCounter))
+            textItem.setPos(self.dots[0][b, a] - self.blockWidth / 2, self.dots[1][b, a] - self.blockHeight / 2)
+            self.addItem(textItem)
+            self.textItems.append(textItem)
+
             neighbors = [(a, b - 1), (a, b + 1), (a - 1, b), (a + 1, b),
                          (a - 1, b - 1), (a - 1, b + 1), (a + 1, b - 1),  (a + 1, b + 1)]
 
@@ -185,6 +202,11 @@ class GraphicsScene(QGraphicsScene):
                         que.put((i, j))
                         visited[i, j] = 1
                         transition[(i, j)] = (a, b)
+                        numNextLayer += 1
+
+            if numCurrentLayer == 0:
+                layerCounter += 1
+                numCurrentLayer, numNextLayer = numNextLayer, numCurrentLayer
 
         return False
 
