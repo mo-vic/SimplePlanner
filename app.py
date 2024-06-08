@@ -442,11 +442,18 @@ class GraphicsScene(QGraphicsScene):
         while not que.empty():
             _, node = que.get()
 
+            # if node been visited, remove it from open set
+            if visited[node[0], node[1]] > 1:
+                continue
+
             if node == self.goal:  # if no more nodes with priority higher than this node, the optimal path was found
                 self.drawPath(transition)
                 return True
 
             a, b = node
+
+            # move to closed set
+            visited[a, b] += 1
 
             # to distinguish between diagonal and axial neighbors
             neighbors = [(a - 1, b - 1, True), (a - 1, b, False), (a - 1, b + 1, True),
@@ -476,7 +483,7 @@ class GraphicsScene(QGraphicsScene):
 
                             que.put((priority, (i, j)))
                     # if not in the open set
-                    else:
+                    elif visited[i, j] == 0:
                         g[(i, j)] = g[(a, b)] + (1.4 if diag else 1)
                         transition[(i, j)] = (a, b)
 
