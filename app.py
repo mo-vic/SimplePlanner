@@ -145,6 +145,19 @@ class GraphicsScene(QGraphicsScene):
         if self.initFinished:
             print(self.runBFS())
 
+    def drawPath(self, transition):
+        traceNode = self.goal
+        while traceNode in transition:
+            preNode = transition[traceNode]
+            a, b = traceNode
+            i, j = preNode
+            lineItem = QGraphicsLineItem()
+            lineItem.setPen(QPen(QColor(0, 0, 255), 3))
+            lineItem.setLine(self.dots[0][b, a], self.dots[1][b, a], self.dots[0][j, i], self.dots[1][j, i])
+            self.path.append(lineItem)
+            self.addItem(lineItem)
+            traceNode = (i, j)
+
     def runBFS(self):
         for lineItem in self.path:
             self.removeItem(lineItem)
@@ -175,17 +188,7 @@ class GraphicsScene(QGraphicsScene):
 
             numCurrentLayer -= 1
             if node == self.goal:
-                traceNode = self.goal
-                while traceNode in transition:
-                    preNode = transition[traceNode]
-                    a, b = traceNode
-                    i, j = preNode
-                    lineItem = QGraphicsLineItem()
-                    lineItem.setPen(QPen(QColor(0, 0, 255), 3))
-                    lineItem.setLine(self.dots[0][b, a], self.dots[1][b, a], self.dots[0][j, i], self.dots[1][j, i])
-                    self.path.append(lineItem)
-                    self.addItem(lineItem)
-                    traceNode = (i, j)
+                self.drawPath(transition)
 
                 maxValue = 0
                 for colormapItem in self.colormapItems:
