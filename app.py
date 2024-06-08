@@ -174,9 +174,8 @@ class GraphicsScene(QGraphicsScene):
 
             a, b = node
 
-            neighbors = [(a - 1, b - 1), (a - 1, b), (a - 1, b + 1),
-                         (a, b - 1), (a, b + 1),
-                         (a + 1, b - 1), (a + 1, b), (a + 1, b + 1)]
+            neighbors = [(a, b - 1), (a, b + 1), (a - 1, b), (a + 1, b),
+                         (a - 1, b - 1), (a - 1, b + 1), (a + 1, b - 1),  (a + 1, b + 1)]
 
             for i, j in neighbors:
                 if 0 <= i < self.num_x_coor and 0 <= j < self.num_y_coor:
