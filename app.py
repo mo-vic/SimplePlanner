@@ -1,5 +1,6 @@
 import sys
 import json
+import argparse
 from queue import Queue
 
 import numpy as np
@@ -21,8 +22,14 @@ from PyQt5.QtWidgets import QApplication
 
 
 class GraphicsScene(QGraphicsScene):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, args=None):
         super(GraphicsScene, self).__init__(parent=parent)
+
+        self.algorithm = args.algorithm
+        self.radius = args.radius
+        self.diameter = self.radius * 2.0
+        self.num_horizontal_grid = args.num_horizontal_grid
+        self.num_vertical_grid = args.num_vertical_grid
 
         self.start = (0, 0)
         self.goal = (0, 0)
@@ -46,51 +53,50 @@ class GraphicsScene(QGraphicsScene):
             polygon.setBrush(QBrush(QColor(0, 0, 0, 128)))
             self.addItem(polygon)
 
-        x_interval = np.linspace(0.0, 1024.0, 40)
-        y_interval = np.linspace(0.0, 1024.0, 40)
+        if self.algorithm in ["BFS"]:
+            x_interval = np.linspace(0.0, 1024.0, self.num_horizontal_grid)
+            y_interval = np.linspace(0.0, 1024.0, self.num_vertical_grid)
 
-        # draw horizontal line
-        for y_coor in y_interval:
-            lineItem = QGraphicsLineItem()
-            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
-            lineItem.setLine(x_interval[0], y_coor, x_interval[-1], y_coor)
-            self.addItem(lineItem)
+            # draw horizontal line
+            for y_coor in y_interval:
+                lineItem = QGraphicsLineItem()
+                lineItem.setPen(QPen(QColor(0, 0, 0), 2))
+                lineItem.setLine(x_interval[0], y_coor, x_interval[-1], y_coor)
+                self.addItem(lineItem)
 
-        # draw vertical line
-        for x_coor in x_interval:
-            lineItem = QGraphicsLineItem()
-            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
-            lineItem.setLine(x_coor, y_interval[0], x_coor, y_interval[-1])
-            self.addItem(lineItem)
+            # draw vertical line
+            for x_coor in x_interval:
+                lineItem = QGraphicsLineItem()
+                lineItem.setPen(QPen(QColor(0, 0, 0), 2))
+                lineItem.setLine(x_coor, y_interval[0], x_coor, y_interval[-1])
+                self.addItem(lineItem)
 
-        x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
-        y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
-        self.dots = np.meshgrid(x_dot_coor, y_dot_coor)
+            x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
+            y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
+            self.dots = np.meshgrid(x_dot_coor, y_dot_coor)
 
-        self.num_x_coor = len(x_dot_coor)
-        self.num_y_coor = len(y_dot_coor)
-        self.grid = np.zeros((self.num_x_coor, self.num_y_coor), dtype=np.int)
+            self.num_x_coor = len(x_dot_coor)
+            self.num_y_coor = len(y_dot_coor)
+            self.grid = np.zeros((self.num_y_coor, self.num_x_coor), dtype=np.int)
 
-        # for grid collision detection
-        self.blockItem = QGraphicsRectItem()
-        self.blockWidth = x_interval[1] - x_interval[0]
-        self.blockHeight = y_interval[1] - y_interval[0]
-        self.blockItem.setRect(0, 0, self.blockWidth, self.blockHeight)
-        self.addItem(self.blockItem)
+            # for grid collision detection
+            self.blockItem = QGraphicsRectItem()
+            self.blockWidth = x_interval[1] - x_interval[0]
+            self.blockHeight = y_interval[1] - y_interval[0]
+            self.blockItem.setRect(0, 0, self.blockWidth, self.blockHeight)
+            self.addItem(self.blockItem)
 
-        radius = 3
-        diameter = 6
-        self.startItem = QGraphicsEllipseItem()
-        self.startItem.setPen(QPen(QColor(0, 255, 0)))
-        self.startItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
-        self.startItem.setPos(QPointF(0, 0))
-        self.startItem.setRect(self.dots[0][0, 0] - radius, self.dots[1][0, 0] - radius, diameter, diameter)
+            self.startItem = QGraphicsEllipseItem()
+            self.startItem.setPen(QPen(QColor(0, 255, 0)))
+            self.startItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
+            self.startItem.setPos(QPointF(0, 0))
+            self.startItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
 
-        self.goalItem = QGraphicsEllipseItem()
-        self.goalItem.setPen(QPen(QColor(255, 0, 0)))
-        self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
-        self.goalItem.setPos(QPointF(0, 0))
-        self.goalItem.setRect(self.dots[0][0, 0] - radius, self.dots[1][0, 0] - radius, diameter, diameter)
+            self.goalItem = QGraphicsEllipseItem()
+            self.goalItem.setPen(QPen(QColor(255, 0, 0)))
+            self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
+            self.goalItem.setPos(QPointF(0, 0))
+            self.goalItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
 
     def checkCollision(self, x, y):
         self.blockItem.setX(x)
@@ -124,26 +130,37 @@ class GraphicsScene(QGraphicsScene):
         return False
 
     def mouseDoubleClickEvent(self, event):
-        radius = 3
-        diameter = 6
         x = event.scenePos().x()
         y = event.scenePos().y()
 
-        i = int(x // self.blockWidth)
-        j = int(y // self.blockHeight)
-        print(event.scenePos().x(), event.scenePos().y())
-        if event.button() == Qt.LeftButton:
-            self.start = (i, j)
-            self.startItem.setRect(self.dots[0][j, i] - radius, self.dots[1][j, i] - radius, diameter, diameter)
+        if self.algorithm in ["BFS"]:
+            i = int(y // self.blockHeight)
+            j = int(x // self.blockWidth)
+            print(event.scenePos().x(), event.scenePos().y())
 
-        elif event.button() == Qt.RightButton:
-            self.goal = (i, j)
-            self.goalItem.setRect(self.dots[0][j, i] - radius, self.dots[1][j, i] - radius, diameter, diameter)
+            if not 0 <= i < self.num_y_coor:
+                return
 
-        print(self.start, self.goal)
+            if not 0 <= j < self.num_x_coor:
+                return
+
+            if event.button() == Qt.LeftButton:
+                self.start = (i, j)
+                self.startItem.setRect(self.dots[0][i, j] - self.radius, self.dots[1][i, j] - self.radius, self.diameter, self.diameter)
+
+            elif event.button() == Qt.RightButton:
+                self.goal = (i, j)
+                self.goalItem.setRect(self.dots[0][i, j] - self.radius, self.dots[1][i, j] - self.radius, self.diameter, self.diameter)
+
+            print(self.start, self.goal)
+        else:
+            raise NotImplementedError
 
         if self.initFinished:
-            print(self.runBFS())
+            if self.algorithm == "BFS":
+                print(self.runBFS())
+            else:
+                raise NotImplementedError
 
     def drawPath(self, transition):
         traceNode = self.goal
@@ -153,7 +170,7 @@ class GraphicsScene(QGraphicsScene):
             i, j = preNode
             lineItem = QGraphicsLineItem()
             lineItem.setPen(QPen(QColor(0, 0, 255), 3))
-            lineItem.setLine(self.dots[0][b, a], self.dots[1][b, a], self.dots[0][j, i], self.dots[1][j, i])
+            lineItem.setLine(self.dots[0][a, b], self.dots[1][a, b], self.dots[0][i, j], self.dots[1][i, j])
             self.path.append(lineItem)
             self.addItem(lineItem)
             traceNode = (i, j)
@@ -213,12 +230,12 @@ class GraphicsScene(QGraphicsScene):
             if layerCounter > 0:
                 textItem = QGraphicsTextItem()
                 textItem.setPlainText(str(layerCounter))
-                textItem.setPos(self.dots[0][b, a] - self.blockWidth / 2, self.dots[1][b, a] - self.blockHeight / 2)
+                textItem.setPos(self.dots[0][a, b] - self.blockWidth / 2, self.dots[1][a, b] - self.blockHeight / 2)
                 self.addItem(textItem)
                 self.textItems.append(textItem)
 
                 colormapItem = QGraphicsRectItem()
-                colormapItem.setRect(self.dots[0][b, a] - self.blockWidth / 2, self.dots[1][b, a] - self.blockHeight / 2
+                colormapItem.setRect(self.dots[0][a, b] - self.blockWidth / 2, self.dots[1][a, b] - self.blockHeight / 2
                                      , self.blockWidth, self.blockHeight)
                 colormapItem.setData(0, layerCounter)
                 self.colormapItems.append(colormapItem)
@@ -227,8 +244,8 @@ class GraphicsScene(QGraphicsScene):
                          (a - 1, b - 1), (a - 1, b + 1), (a + 1, b - 1),  (a + 1, b + 1)]
 
             for i, j in neighbors:
-                if 0 <= i < self.num_x_coor and 0 <= j < self.num_y_coor:
-                    if visited[i, j] == 1 or self.grid[j][i] == 1:
+                if 0 <= i < self.num_y_coor and 0 <= j < self.num_x_coor:
+                    if visited[i, j] == 1 or self.grid[i][j] == 1:
                         continue
                     else:
                         que.put((i, j))
@@ -244,20 +261,23 @@ class GraphicsScene(QGraphicsScene):
 
 
 class CentralWidget(QWidget):
-    def __init__(self):
+    def __init__(self, args):
         super(CentralWidget, self).__init__()
         self.counter = 0
 
         self.setLayout(QHBoxLayout())
 
-        self.scene = GraphicsScene()
+        self.scene = GraphicsScene(args=args)
         self.view = QGraphicsView(self)
         self.view.setScene(self.scene)
 
         self.layout().addWidget(self.view)
 
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.checkGridCollision)
+        if args.algorithm in ["BFS"]:
+            self.timer.timeout.connect(self.checkGridCollision)
+        else:
+            raise NotImplementedError
         self.timer.setInterval(0.0)
 
     def checkGridCollision(self):
@@ -273,18 +293,34 @@ class CentralWidget(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, args):
         super(MainWindow, self).__init__()
-        self.view = CentralWidget()
+        self.view = CentralWidget(args=args)
         self.setCentralWidget(self.view)
-        self.view.startDetection()
+        if args.algorithm in ["BFS"]:
+            self.view.startDetection()
+        else:
+            raise NotImplementedError
         self.statusBar().showMessage("Ready!")
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Simple Planner Animation.")
+
+    parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS"], help="Planning algorithm.")
+
+    # Graph Search Based Methods (BFS)
+    parser.add_argument("--radius", type=float, default=6, help="Radius for the start and goal dot.")
+    parser.add_argument("--num_horizontal_grid", type=int, default=40, help="Number of grid for each row.")
+    parser.add_argument("--num_vertical_grid", type=int, default=40, help="Number of grid for each column.")
+
+    args = parser.parse_args()
+
+    print(args)
+
     app = QApplication(sys.argv)
 
-    mainwindow = MainWindow()
+    mainwindow = MainWindow(args=args)
     mainwindow.setWindowTitle("Simple Planner Animation")
     mainwindow.show()
     app.exec_()
