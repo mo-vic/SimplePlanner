@@ -6,6 +6,8 @@ from queue import Queue, PriorityQueue
 
 import numpy as np
 from matplotlib import cm
+
+from rtree import index
 from scipy.spatial import KDTree
 
 from PyQt5.QtCore import Qt
@@ -40,6 +42,8 @@ class GraphicsScene(QGraphicsScene):
             self.graphSearchAlgoInit(args)
         elif args.algorithm == "PRM":
             self.PRMAlgoInit(args)
+        elif args.algorithm == "RRT":
+            self.RRTAlgoInit(args)
         else:
             raise NotImplementedError
 
@@ -179,6 +183,43 @@ class GraphicsScene(QGraphicsScene):
         self.startSuccess = False
         self.goalSuccess = False
 
+    def RRTAlgoInit(self, args):
+        self.counter = 0
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.startExploring)
+        self.timer.setInterval(0.0)
+
+        self.step_size = args.step_size
+
+        self.num_node = args.num_node  # number of nodes to put in the tree
+
+        self.sampled_init_items = []
+        self.sampled_goal_items = []
+        self.sampled_init_nodes = []
+        self.sampled_goal_nodes = []
+        self.edge_items = []
+
+        self.T_init = dict()
+        self.T_goal = dict()
+        self.graph = dict()
+
+        self.init_rTree = None
+        self.goal_rTree = None
+
+        self.constructionFinished = True
+        self.planningFinished = True
+
+        self.samplingBasedAlgoCommonInit()
+
+        self.startItem.setZValue(100)
+        self.goalItem.setZValue(100)
+
+        self.addItem(self.startItem)
+        self.addItem(self.goalItem)
+
+        self.startSuccess = False
+        self.goalSuccess = False
+
     def checkBlockCollision(self, x, y):
         self.blockItem.setX(x)
         self.blockItem.setY(y)
@@ -217,6 +258,17 @@ class GraphicsScene(QGraphicsScene):
         else:
             return True
 
+    def checkTreeSampleNodeCollision(self, vertexItem):
+        self.addItem(vertexItem)
+
+        collidingItems = vertexItem.collidingItems()
+
+        for collidingItem in collidingItems:
+            if isinstance(collidingItem, QGraphicsPolygonItem) or isinstance(collidingItem, QGraphicsEllipseItem):
+                return False
+
+        return True
+
     def runGraphNodeSampling(self, counter):
         if counter == self.num_node:
             self.sampleFinished = True
@@ -244,6 +296,97 @@ class GraphicsScene(QGraphicsScene):
         else:
             self.removeItem(vertexItem)
             return self.runGraphNodeSampling(counter)
+
+    def runTreeNodeSampling(self):
+        i = np.random.uniform(0, self.workspace_width)
+        j = np.random.uniform(0, self.workspace_height)
+
+        vertexItem = QGraphicsEllipseItem()
+        vertexItem.setPen(QPen(QColor(0, 0, 0)))
+        vertexItem.setBrush(QBrush(QColor(0, 0, 0, 255)))
+        vertexItem.setPos(QPointF(0, 0))
+        vertexItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
+
+        isValid = self.checkTreeSampleNodeCollision(vertexItem)
+
+        self.removeItem(vertexItem)
+        if isValid:
+            return i, j
+        else:
+            return self.runTreeNodeSampling()
+
+    def expandTree(self, treeToExpand, treeToExpandNodes, treeToExpandItems, rTreeToExpand, treeToMerge,
+                   treeToMergeNodes, rTreeToMerge, q_rand):
+        idx = list(rTreeToExpand.nearest(q_rand))[0]
+        q_nearest = treeToExpandNodes[idx]
+
+        dist = np.linalg.norm(np.array(q_nearest) - np.array(q_rand))
+        ratio = self.step_size / dist
+
+        q_new = np.array(q_nearest) + (np.array(q_rand) - np.array(q_nearest)) * ratio
+        q_new = tuple(q_new.tolist())
+
+        if 0 < q_new[0] < self.workspace_width and 0 < q_new[1] < self.workspace_height:
+            pass
+        else:
+            return False
+
+        distance = np.linalg.norm(np.array(q_nearest) - np.array(q_new))
+
+        edgeItem = QGraphicsLineItem()
+        edgeItem.setPen(QPen(QColor(0, 0, 0), 1))
+        edgeItem.setLine(q_nearest[0], q_nearest[1], q_new[0], q_new[1])
+
+        isValid = self.checkEdgeCollision(edgeItem)
+
+        if not isValid:
+            self.removeItem(edgeItem)
+            return False
+        else:
+            i, j = q_new
+
+            vertexItem = QGraphicsEllipseItem()
+            vertexItem.setPen(QPen(QColor(0, 0, 0)))
+            vertexItem.setBrush(QBrush(QColor(0, 0, 0, 255)))
+            vertexItem.setPos(QPointF(0, 0))
+            vertexItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
+
+            self.addItem(vertexItem)
+            treeToExpandNodes.append(q_new)
+            treeToExpandItems.append(vertexItem)
+            rTreeToExpand.insert(len(treeToExpandNodes) - 1, q_new * 2)
+
+            treeToExpand[q_nearest].append((q_new, distance))
+            treeToExpand[q_new] = [(q_nearest, distance)]
+
+            self.edge_items.append(edgeItem)
+
+            # Try merging trees
+            idx = list(rTreeToMerge.nearest(q_new))[0]
+            q_nearest = treeToMergeNodes[idx]
+
+            distance = np.linalg.norm(np.array(q_nearest) - np.array(q_new))
+
+            edgeItem = QGraphicsLineItem()
+            edgeItem.setPen(QPen(QColor(0, 0, 0), 1))
+            edgeItem.setLine(q_nearest[0], q_nearest[1], q_new[0], q_new[1])
+
+            isValid = self.checkEdgeCollision(edgeItem)
+
+            if not isValid:
+                self.removeItem(edgeItem)
+                return False
+            else:
+                self.graph = dict(treeToExpand)
+                for k, v in treeToMerge.items():
+                    self.graph[k] = v
+                self.graph[q_new].append((q_nearest, distance))
+                self.graph[q_nearest].append((q_new, distance))
+
+                self.edge_items.append(edgeItem)
+
+                self.constructionFinished = True
+                return True
 
     def checkEdgeCollision(self, edgeItem):
         self.addItem(edgeItem)
@@ -298,6 +441,32 @@ class GraphicsScene(QGraphicsScene):
                 self.graph[q2].append((q1, distance))
 
         return False
+
+    def startExploring(self):
+        isExploringFinished = self.exploring(self.counter)
+        if isExploringFinished:
+            self.counter = 0
+            self.timer.stop()
+            self.runAStarOnGraph()
+        else:
+            self.counter += 1
+
+    def exploring(self, counter):
+        if counter >= 2 * self.num_node:
+            self.graph = dict(self.T_init)
+            self.constructionFinished = True
+
+            return True
+
+        q_rand = self.runTreeNodeSampling()
+
+        if counter % 2 == 0:
+            return self.expandTree(self.T_init, self.sampled_init_nodes, self.sampled_init_items, self.init_rTree,
+                                   self.T_goal, self.sampled_goal_nodes, self.goal_rTree, q_rand)
+        else:
+            return self.expandTree(self.T_goal, self.sampled_goal_nodes, self.sampled_goal_items, self.goal_rTree,
+                                   self.T_init, self.sampled_init_nodes, self.init_rTree, q_rand)
+
 
     def mouseDoubleClickEvent(self, event):
         x = event.scenePos().x()
@@ -405,6 +574,70 @@ class GraphicsScene(QGraphicsScene):
 
             if self.startSuccess and self.goalSuccess:
                 print(self.runAStarOnGraph())
+        elif self.algorithm == "RRT":
+            if self.constructionFinished and self.planningFinished:
+                i, j = x, y
+                print(self.start, self.goal)
+
+                self.sampled_init_nodes = []
+                self.sampled_goal_nodes = []
+                for item in self.sampled_init_items:
+                    self.removeItem(item)
+                self.sampled_init_items.clear()
+                for item in self.sampled_goal_items:
+                    self.removeItem(item)
+                self.sampled_goal_items.clear()
+                for item in self.edge_items:
+                    self.removeItem(item)
+                self.edge_items.clear()
+                for lineItem in self.path:
+                    self.removeItem(lineItem)
+
+                self.path.clear()
+                self.graph = dict()
+                self.init_rTree = index.Index()
+                self.goal_rTree = index.Index()
+                self.T_init = dict()
+                self.T_goal = dict()
+
+                print(event.scenePos().x(), event.scenePos().y())
+                if event.button() == Qt.LeftButton:
+                    self.start = (i, j)
+                    self.startItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
+
+                    self.removeItem(self.startItem)
+                    if self.checkTreeSampleNodeCollision(self.startItem):
+                        self.startSuccess = True
+                    else:
+                        self.startSuccess = False
+
+                elif event.button() == Qt.RightButton:
+                    self.goal = (i, j)
+                    self.goalItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
+
+                    self.removeItem(self.goalItem)
+                    if self.checkTreeSampleNodeCollision(self.goalItem):
+                        self.goalSuccess = True
+                    else:
+                        self.goalSuccess = False
+
+                self.addItem(self.startItem)
+                self.addItem(self.goalItem)
+
+                if self.startSuccess and self.goalSuccess:
+                    self.init_rTree.insert(0, self.start * 2)
+                    self.sampled_init_nodes.append(self.start)
+                    self.sampled_init_items.append(self.startItem)
+                    self.T_init[self.start] = []
+
+                    self.goal_rTree.insert(0, self.goal * 2)
+                    self.sampled_goal_nodes.append(self.goal)
+                    self.sampled_goal_items.append(self.goalItem)
+                    self.T_goal[self.goal] = []
+
+                    self.constructionFinished = False
+                    self.planningFinished = False
+                    self.timer.start()
         else:
             raise NotImplementedError
 
@@ -819,6 +1052,10 @@ class GraphicsScene(QGraphicsScene):
             if node == self.goal:  # if no more nodes with priority higher than this node, the optimal path was found
                 print("dist is ", g[node])
                 self.drawPathOnGraph(transition)
+
+                if self.algorithm == "RRT":
+                    self.planningFinished = True
+
                 return True
 
             a, b = node
@@ -857,6 +1094,9 @@ class GraphicsScene(QGraphicsScene):
                     que.put((priority, next_node))
                     visited[next_node] = 1
 
+        if self.algorithm == "RRT":
+            self.planningFinished = True
+
         return False
 
 
@@ -878,6 +1118,8 @@ class CentralWidget(QWidget):
             self.timer.timeout.connect(self.checkGridCollision)
         elif args.algorithm == "PRM":
             self.timer.timeout.connect(self.runNodeSampling)
+        elif args.algorithm == "RRT":
+            pass
         else:
             raise NotImplementedError
         self.timer.setInterval(0.0)
@@ -926,6 +1168,8 @@ class MainWindow(QMainWindow):
             self.view.startDetection()
         elif args.algorithm == "PRM":
             self.view.startGraphBuilding()
+        elif args.algorithm == "RRT":
+            pass
         else:
             raise NotImplementedError
         self.statusBar().showMessage("Ready!")
@@ -934,7 +1178,7 @@ class MainWindow(QMainWindow):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Simple Planner Animation.")
 
-    parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS", "DFS", "Greedy", "AStar", "PRM"], help="Planning algorithm.")
+    parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS", "DFS", "Greedy", "AStar", "PRM", "RRT"], help="Planning algorithm.")
 
     # Common
     parser.add_argument("--radius", type=float, default=6, help="Radius for the start and goal dot.")
@@ -943,9 +1187,10 @@ if __name__ == '__main__':
     parser.add_argument("--num_horizontal_grid", type=int, default=40, help="Number of grid for each row.")
     parser.add_argument("--num_vertical_grid", type=int, default=40, help="Number of grid for each column.")
 
-    # Sampling Based Methods (PRM)
+    # Sampling Based Methods (PRM, RRT)
     parser.add_argument("--num_node", type=int, default=1000, help="Number of nodes to put in the roadmap.")
     parser.add_argument("--num_nearest", type=int, default=4, help="Number of closest neighbors to examine for each configuration.")
+    parser.add_argument("--step_size", type=float, default=12, help="Step size for extending the tree.")
 
     args = parser.parse_args()
 
