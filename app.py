@@ -30,21 +30,124 @@ class GraphicsScene(QGraphicsScene):
         self.algorithm = args.algorithm
         self.radius = args.radius
         self.diameter = self.radius * 2.0
-        self.num_horizontal_grid = args.num_horizontal_grid
-        self.num_vertical_grid = args.num_vertical_grid
-
-        self.num_node = args.num_node  # number of nodes to put in the roadmap
-        self.num_nearest = args.num_nearest  # number of closest neighbors to examine for each configuration
 
         self.start = (0, 0)
         self.goal = (0, 0)
 
-        self.initFinished = False
+        self.loadEnv()
 
+        if args.algorithm in ["BFS", "DFS", "Greedy", "AStar"]:
+            self.graphSearchAlgoInit(args)
+        elif args.algorithm == "PRM":
+            self.PRMAlgoInit(args)
+        else:
+            raise NotImplementedError
+
+    def loadEnv(self):
+        with open("canvas.json", 'r') as f:
+            json_content = json.load(f)
+
+        for obstacle in json_content["shapes"]:
+            polygon = QGraphicsPolygonItem()
+            polygonF = QPolygonF()
+            for px, py in obstacle["points"]:
+                polygonF.append(QPointF(px, py))
+            polygon.setPolygon(polygonF)
+            polygon.setPen(QPen(QColor(0, 0, 255)))
+            polygon.setBrush(QBrush(QColor(0, 0, 0, 128)))
+            self.addItem(polygon)
+
+    def graphSearchAlgoInit(self, args):
         self.path = []
         self.textItems = []
         self.colormapItems = []
 
+        self.initFinished = False
+
+        self.num_horizontal_grid = args.num_horizontal_grid
+        self.num_vertical_grid = args.num_vertical_grid
+
+        x_interval = np.linspace(0.0, 1024.0, self.num_horizontal_grid)
+        y_interval = np.linspace(0.0, 1024.0, self.num_vertical_grid)
+
+        # draw horizontal line
+        for y_coor in y_interval:
+            lineItem = QGraphicsLineItem()
+            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
+            lineItem.setLine(x_interval[0], y_coor, x_interval[-1], y_coor)
+            self.addItem(lineItem)
+
+        # draw vertical line
+        for x_coor in x_interval:
+            lineItem = QGraphicsLineItem()
+            lineItem.setPen(QPen(QColor(0, 0, 0), 2))
+            lineItem.setLine(x_coor, y_interval[0], x_coor, y_interval[-1])
+            self.addItem(lineItem)
+
+        x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
+        y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
+        self.dots = np.meshgrid(x_dot_coor, y_dot_coor)
+
+        self.num_x_coor = len(x_dot_coor)
+        self.num_y_coor = len(y_dot_coor)
+        self.grid = np.zeros((self.num_y_coor, self.num_x_coor), dtype=np.int)
+
+        # for grid collision detection
+        self.blockItem = QGraphicsRectItem()
+        self.blockWidth = x_interval[1] - x_interval[0]
+        self.blockHeight = y_interval[1] - y_interval[0]
+        self.blockItem.setRect(0, 0, self.blockWidth, self.blockHeight)
+        self.addItem(self.blockItem)
+
+        self.startItem = QGraphicsEllipseItem()
+        self.startItem.setPen(QPen(QColor(0, 255, 0)))
+        self.startItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
+        self.startItem.setPos(QPointF(0, 0))
+        self.startItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
+
+        self.goalItem = QGraphicsEllipseItem()
+        self.goalItem.setPen(QPen(QColor(255, 0, 0)))
+        self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
+        self.goalItem.setPos(QPointF(0, 0))
+        self.goalItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
+
+    def samplingBasedAlgoCommonInit(self):
+        self.workspace_width = 1024
+        self.workspace_height = 1024
+
+        self.path = []
+
+        # draw horizontal border line
+        for y_coor in [0, self.workspace_height]:
+            borderLineItem = QGraphicsLineItem()
+            borderLineItem.setPen(QPen(QColor(0, 0, 0), 2))
+            borderLineItem.setLine(0, y_coor, self.workspace_width, y_coor)
+            self.addItem(borderLineItem)
+
+        # draw vertical border line
+        for x_coor in [0, self.workspace_width]:
+            borderLineItem = QGraphicsLineItem()
+            borderLineItem.setPen(QPen(QColor(0, 0, 0), 2))
+            borderLineItem.setLine(x_coor, 0, x_coor, self.workspace_height)
+            self.addItem(borderLineItem)
+
+        self.startItem = QGraphicsRectItem()
+        self.startItem.setPen(QPen(QColor(0, 255, 0)))
+        self.startItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
+        self.startItem.setPos(QPointF(0, 0))
+        self.startItem.setRect(self.start[0] - self.radius, self.start[1] - self.radius, self.diameter, self.diameter)
+
+        self.goalItem = QGraphicsRectItem()
+        self.goalItem.setPen(QPen(QColor(255, 0, 0)))
+        self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
+        self.goalItem.setPos(QPointF(0, 0))
+        self.goalItem.setRect(self.goal[0] - self.radius, self.goal[1] - self.radius, self.diameter, self.diameter)
+
+    def PRMAlgoInit(self, args):
+        self.num_node = args.num_node  # number of nodes to put in the roadmap
+        self.num_nearest = args.num_nearest  # number of closest neighbors to examine for each configuration
+
+        self.initFinished = False
         self.sampleFinished = False
         self.constructionFinished = False
 
@@ -59,107 +162,22 @@ class GraphicsScene(QGraphicsScene):
 
         self.kdTree = None
 
-        with open("canvas.json", 'r') as f:
-            json_content = json.load(f)
+        self.samplingBasedAlgoCommonInit()
 
-        for obstacle in json_content["shapes"]:
-            polygon = QGraphicsPolygonItem()
-            polygonF = QPolygonF()
-            for px, py in obstacle["points"]:
-                polygonF.append(QPointF(px, py))
-            polygon.setPolygon(polygonF)
-            polygon.setPen(QPen(QColor(0, 0, 255)))
-            polygon.setBrush(QBrush(QColor(0, 0, 0, 128)))
-            self.addItem(polygon)
+        self.startToRoadMapItem = QGraphicsLineItem()
+        self.startToRoadMapItem.setPen(QPen(QColor(0, 255, 0), 3, Qt.DashLine))
+        self.startToRoadMapItem.setLine(0, 0, 0, 0)
+        self.startToRoadMapItem.setVisible(False)
+        self.addItem(self.startToRoadMapItem)
 
-        if self.algorithm in ["BFS", "DFS", "Greedy", "AStar"]:
-            x_interval = np.linspace(0.0, 1024.0, self.num_horizontal_grid)
-            y_interval = np.linspace(0.0, 1024.0, self.num_vertical_grid)
+        self.goalToRoadMapItem = QGraphicsLineItem()
+        self.goalToRoadMapItem.setPen(QPen(QColor(255, 0, 0), 3, Qt.DashLine))
+        self.goalToRoadMapItem.setLine(0, 0, 0, 0)
+        self.goalToRoadMapItem.setVisible(False)
+        self.addItem(self.goalToRoadMapItem)
 
-            # draw horizontal line
-            for y_coor in y_interval:
-                lineItem = QGraphicsLineItem()
-                lineItem.setPen(QPen(QColor(0, 0, 0), 2))
-                lineItem.setLine(x_interval[0], y_coor, x_interval[-1], y_coor)
-                self.addItem(lineItem)
-
-            # draw vertical line
-            for x_coor in x_interval:
-                lineItem = QGraphicsLineItem()
-                lineItem.setPen(QPen(QColor(0, 0, 0), 2))
-                lineItem.setLine(x_coor, y_interval[0], x_coor, y_interval[-1])
-                self.addItem(lineItem)
-
-            x_dot_coor = (x_interval[1:] + x_interval[:-1]) / 2.0
-            y_dot_coor = (y_interval[1:] + y_interval[:-1]) / 2.0
-            self.dots = np.meshgrid(x_dot_coor, y_dot_coor)
-
-            self.num_x_coor = len(x_dot_coor)
-            self.num_y_coor = len(y_dot_coor)
-            self.grid = np.zeros((self.num_y_coor, self.num_x_coor), dtype=np.int)
-
-            # for grid collision detection
-            self.blockItem = QGraphicsRectItem()
-            self.blockWidth = x_interval[1] - x_interval[0]
-            self.blockHeight = y_interval[1] - y_interval[0]
-            self.blockItem.setRect(0, 0, self.blockWidth, self.blockHeight)
-            self.addItem(self.blockItem)
-
-            self.startItem = QGraphicsEllipseItem()
-            self.startItem.setPen(QPen(QColor(0, 255, 0)))
-            self.startItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
-            self.startItem.setPos(QPointF(0, 0))
-            self.startItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
-
-            self.goalItem = QGraphicsEllipseItem()
-            self.goalItem.setPen(QPen(QColor(255, 0, 0)))
-            self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
-            self.goalItem.setPos(QPointF(0, 0))
-            self.goalItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
-        elif self.algorithm in ["PRM"]:
-            self.workspace_width = 1024
-            self.workspace_height = 1024
-
-            # draw horizontal border line
-            for y_coor in [0, self.workspace_height]:
-                borderLineItem = QGraphicsLineItem()
-                borderLineItem.setPen(QPen(QColor(0, 0, 0), 2))
-                borderLineItem.setLine(0, y_coor, self.workspace_width, y_coor)
-                self.addItem(borderLineItem)
-
-            # draw vertical border line
-            for x_coor in [0, self.workspace_width]:
-                borderLineItem = QGraphicsLineItem()
-                borderLineItem.setPen(QPen(QColor(0, 0, 0), 2))
-                borderLineItem.setLine(x_coor, 0, x_coor, self.workspace_height)
-                self.addItem(borderLineItem)
-
-            self.startItem = QGraphicsRectItem()
-            self.startItem.setPen(QPen(QColor(0, 255, 0)))
-            self.startItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
-            self.startItem.setPos(QPointF(0, 0))
-            self.startItem.setRect(self.start[0] - self.radius, self.start[1] - self.radius, self.diameter, self.diameter)
-
-            self.goalItem = QGraphicsRectItem()
-            self.goalItem.setPen(QPen(QColor(255, 0, 0)))
-            self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
-            self.goalItem.setPos(QPointF(0, 0))
-            self.goalItem.setRect(self.goal[0] - self.radius, self.goal[1] - self.radius, self.diameter, self.diameter)
-
-            self.startToRoadMapItem = QGraphicsLineItem()
-            self.startToRoadMapItem.setPen(QPen(QColor(0, 255, 0), 3, Qt.DashLine))
-            self.startToRoadMapItem.setLine(0, 0, 0, 0)
-            self.startToRoadMapItem.setVisible(False)
-            self.addItem(self.startToRoadMapItem)
-
-            self.goalToRoadMapItem = QGraphicsLineItem()
-            self.goalToRoadMapItem.setPen(QPen(QColor(255, 0, 0), 3, Qt.DashLine))
-            self.goalToRoadMapItem.setLine(0, 0, 0, 0)
-            self.goalToRoadMapItem.setVisible(False)
-            self.addItem(self.goalToRoadMapItem)
-
-            self.startSuccess = False
-            self.goalSuccess = False
+        self.startSuccess = False
+        self.goalSuccess = False
 
     def checkBlockCollision(self, x, y):
         self.blockItem.setX(x)
