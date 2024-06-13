@@ -210,14 +210,14 @@ class GraphicsScene(QGraphicsScene):
 
         return False
 
-    def checkSampleCollision(self, vertexItem):
+    def checkGraphSampleNodeCollision(self, vertexItem):
         self.addItem(vertexItem)
         if len(vertexItem.collidingItems()) > 0:
             return False
         else:
             return True
 
-    def runSampling(self, counter):
+    def runGraphNodeSampling(self, counter):
         if counter == self.num_node:
             self.sampleFinished = True
 
@@ -235,7 +235,7 @@ class GraphicsScene(QGraphicsScene):
         vertexItem.setPos(QPointF(0, 0))
         vertexItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
 
-        isValid = self.checkSampleCollision(vertexItem)
+        isValid = self.checkGraphSampleNodeCollision(vertexItem)
 
         if isValid:
             self.sampled_items.append(vertexItem)
@@ -243,7 +243,7 @@ class GraphicsScene(QGraphicsScene):
             return False
         else:
             self.removeItem(vertexItem)
-            return self.runSampling(counter)
+            return self.runGraphNodeSampling(counter)
 
     def checkEdgeCollision(self, edgeItem):
         self.addItem(edgeItem)
@@ -894,7 +894,7 @@ class CentralWidget(QWidget):
         self.timer.start()
 
     def runNodeSampling(self):
-        isSamplingFinished = self.scene.runSampling(self.counter)
+        isSamplingFinished = self.scene.runGraphNodeSampling(self.counter)
         if isSamplingFinished:
             self.counter = 0
             self.timer.stop()
