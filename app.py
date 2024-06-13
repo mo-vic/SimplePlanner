@@ -6,6 +6,7 @@ from queue import Queue, PriorityQueue
 
 import numpy as np
 from matplotlib import cm
+from scipy.spatial import KDTree
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QTimer
@@ -32,6 +33,9 @@ class GraphicsScene(QGraphicsScene):
         self.num_horizontal_grid = args.num_horizontal_grid
         self.num_vertical_grid = args.num_vertical_grid
 
+        self.num_node = args.num_node  # number of nodes to put in the roadmap
+        self.num_nearest = args.num_nearest  # number of closest neighbors to examine for each configuration
+
         self.start = (0, 0)
         self.goal = (0, 0)
 
@@ -40,6 +44,20 @@ class GraphicsScene(QGraphicsScene):
         self.path = []
         self.textItems = []
         self.colormapItems = []
+
+        self.sampleFinished = False
+        self.constructionFinished = False
+
+        self.sampled_items = []
+        self.sampled_nodes = []
+        self.edges = set()  # for checking if an edge already exists while constructing the graph
+        self.graph = dict()
+
+        # distance and indices return by KDTree querying
+        self.dist = None
+        self.indices = None
+
+        self.kdTree = None
 
         with open("canvas.json", 'r') as f:
             json_content = json.load(f)
@@ -98,6 +116,50 @@ class GraphicsScene(QGraphicsScene):
             self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
             self.goalItem.setPos(QPointF(0, 0))
             self.goalItem.setRect(self.dots[0][0, 0] - self.radius, self.dots[1][0, 0] - self.radius, self.diameter, self.diameter)
+        elif self.algorithm in ["PRM"]:
+            self.workspace_width = 1024
+            self.workspace_height = 1024
+
+            # draw horizontal border line
+            for y_coor in [0, self.workspace_height]:
+                borderLineItem = QGraphicsLineItem()
+                borderLineItem.setPen(QPen(QColor(0, 0, 0), 2))
+                borderLineItem.setLine(0, y_coor, self.workspace_width, y_coor)
+                self.addItem(borderLineItem)
+
+            # draw vertical border line
+            for x_coor in [0, self.workspace_width]:
+                borderLineItem = QGraphicsLineItem()
+                borderLineItem.setPen(QPen(QColor(0, 0, 0), 2))
+                borderLineItem.setLine(x_coor, 0, x_coor, self.workspace_height)
+                self.addItem(borderLineItem)
+
+            self.startItem = QGraphicsRectItem()
+            self.startItem.setPen(QPen(QColor(0, 255, 0)))
+            self.startItem.setBrush(QBrush(QColor(0, 255, 0, 255)))
+            self.startItem.setPos(QPointF(0, 0))
+            self.startItem.setRect(self.start[0] - self.radius, self.start[1] - self.radius, self.diameter, self.diameter)
+
+            self.goalItem = QGraphicsRectItem()
+            self.goalItem.setPen(QPen(QColor(255, 0, 0)))
+            self.goalItem.setBrush(QBrush(QColor(255, 0, 0, 255)))
+            self.goalItem.setPos(QPointF(0, 0))
+            self.goalItem.setRect(self.goal[0] - self.radius, self.goal[1] - self.radius, self.diameter, self.diameter)
+
+            self.startToRoadMapItem = QGraphicsLineItem()
+            self.startToRoadMapItem.setPen(QPen(QColor(0, 255, 0), 3, Qt.DashLine))
+            self.startToRoadMapItem.setLine(0, 0, 0, 0)
+            self.startToRoadMapItem.setVisible(False)
+            self.addItem(self.startToRoadMapItem)
+
+            self.goalToRoadMapItem = QGraphicsLineItem()
+            self.goalToRoadMapItem.setPen(QPen(QColor(255, 0, 0), 3, Qt.DashLine))
+            self.goalToRoadMapItem.setLine(0, 0, 0, 0)
+            self.goalToRoadMapItem.setVisible(False)
+            self.addItem(self.goalToRoadMapItem)
+
+            self.startSuccess = False
+            self.goalSuccess = False
 
     def checkBlockCollision(self, x, y):
         self.blockItem.setX(x)
@@ -130,6 +192,95 @@ class GraphicsScene(QGraphicsScene):
 
         return False
 
+    def checkSampleCollision(self, vertexItem):
+        self.addItem(vertexItem)
+        if len(vertexItem.collidingItems()) > 0:
+            return False
+        else:
+            return True
+
+    def runSampling(self, counter):
+        if counter == self.num_node:
+            self.sampleFinished = True
+
+            self.kdTree = KDTree(np.array(self.sampled_nodes))
+            self.dist, self.indices = self.kdTree.query(np.array(self.sampled_nodes), k=self.num_nearest + 1)
+
+            return True
+
+        i = np.random.uniform(0, self.workspace_width)
+        j = np.random.uniform(0, self.workspace_height)
+
+        vertexItem = QGraphicsEllipseItem()
+        vertexItem.setPen(QPen(QColor(0, 0, 0)))
+        vertexItem.setBrush(QBrush(QColor(0, 0, 0, 255)))
+        vertexItem.setPos(QPointF(0, 0))
+        vertexItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
+
+        isValid = self.checkSampleCollision(vertexItem)
+
+        if isValid:
+            self.sampled_items.append(vertexItem)
+            self.sampled_nodes.append((i, j))
+            return False
+        else:
+            self.removeItem(vertexItem)
+            return self.runSampling(counter)
+
+    def checkEdgeCollision(self, edgeItem):
+        self.addItem(edgeItem)
+
+        collidingItems = edgeItem.collidingItems()
+
+        for collidingItem in collidingItems:
+            if isinstance(collidingItem, QGraphicsPolygonItem):
+                return False
+
+        return True
+
+    def connectEdge(self, counter):
+        if counter >= len(self.sampled_nodes):
+            self.constructionFinished = True
+
+            self.addItem(self.startItem)
+            self.addItem(self.goalItem)
+
+            return True
+
+        for i in range(1, self.num_nearest + 1):
+            q1 = self.sampled_nodes[counter]
+            idx = self.indices[counter][i]
+            distance = self.dist[counter][i]
+
+            if idx == self.num_node:
+                continue
+
+            q2 = self.sampled_nodes[idx]
+
+            edgeItem = QGraphicsLineItem()
+            edgeItem.setPen(QPen(QColor(0, 0, 0), 1))
+            edgeItem.setLine(q1[0], q1[1], q2[0], q2[1])
+
+            if (q2, q1) in self.edges:
+                continue
+            else:
+                edge = (q1, q2)
+                self.edges.add(edge)
+
+            isValid = self.checkEdgeCollision(edgeItem)
+
+            if not isValid:
+                self.removeItem(edgeItem)
+            else:
+                if not q1 in self.graph:
+                    self.graph[q1] = []
+                if not q2 in self.graph:
+                    self.graph[q2] = []
+                self.graph[q1].append((q2, distance))
+                self.graph[q2].append((q1, distance))
+
+        return False
+
     def mouseDoubleClickEvent(self, event):
         x = event.scenePos().x()
         y = event.scenePos().y()
@@ -154,20 +305,90 @@ class GraphicsScene(QGraphicsScene):
                 self.goalItem.setRect(self.dots[0][i, j] - self.radius, self.dots[1][i, j] - self.radius, self.diameter, self.diameter)
 
             print(self.start, self.goal)
+
+            if self.initFinished:
+                if self.algorithm == "BFS":
+                    print(self.runBFS())
+                elif self.algorithm == "DFS":
+                    print(self.runDFS())
+                elif self.algorithm == "Greedy":
+                    print(self.runGreedy())
+                elif self.algorithm == "AStar":
+                    print(self.runAStarOnGrid())
+                else:
+                    raise NotImplementedError
+        elif self.algorithm == "PRM":
+            i, j = x, y
+            print(event.scenePos().x(), event.scenePos().y())
+
+            if event.button() == Qt.LeftButton:
+                self.start = (i, j)
+                self.startItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
+
+                if self.constructionFinished:
+                    # connect q_init to roadmap
+                    self.startSuccess = False
+                    dist, indices = self.kdTree.query(self.start, self.num_nearest)
+                    for i in range(self.num_nearest):
+                        q1 = self.start
+                        idx = indices[i]
+                        q2 = self.sampled_nodes[idx]
+
+                        edgeItem = QGraphicsLineItem()
+                        edgeItem.setPen(QPen(QColor(0, 0, 255), 2))
+                        edgeItem.setLine(q1[0], q1[1], q2[0], q2[1])
+
+                        isValid = self.checkEdgeCollision(edgeItem)
+
+                        self.removeItem(edgeItem)
+
+                        if isValid:
+                            self.startToRoadMapItem.setLine(q1[0], q1[1], q2[0], q2[1])
+                            self.startToRoadMapItem.setVisible(True)
+                            self.startSuccess = True
+                            self.start = q2
+                            break
+
+                    if not self.startSuccess:
+                        self.startToRoadMapItem.setVisible(False)
+
+            elif event.button() == Qt.RightButton:
+                self.goal = (i, j)
+                self.goalItem.setRect(i - self.radius, j - self.radius, self.diameter, self.diameter)
+
+                if self.constructionFinished:
+                    # connect q_goal to roadmap
+                    self.goalSuccess = False
+                    dist, indices = self.kdTree.query(self.goal, self.num_nearest)
+                    for i in range(self.num_nearest):
+                        q1 = self.goal
+                        idx = indices[i]
+                        q2 = self.sampled_nodes[idx]
+
+                        edgeItem = QGraphicsLineItem()
+                        edgeItem.setPen(QPen(QColor(0, 0, 255), 2))
+                        edgeItem.setLine(q1[0], q1[1], q2[0], q2[1])
+
+                        isValid = self.checkEdgeCollision(edgeItem)
+
+                        self.removeItem(edgeItem)
+
+                        if isValid:
+                            self.goalToRoadMapItem.setLine(q1[0], q1[1], q2[0], q2[1])
+                            self.goalToRoadMapItem.setVisible(True)
+                            self.goalSuccess = True
+                            self.goal = q2
+                            break
+
+                    if not self.goalSuccess:
+                        self.goalToRoadMapItem.setVisible(False)
+
+            print(self.start, self.goal)
+
+            if self.startSuccess and self.goalSuccess:
+                print(self.runAStarOnGraph())
         else:
             raise NotImplementedError
-
-        if self.initFinished:
-            if self.algorithm == "BFS":
-                print(self.runBFS())
-            elif self.algorithm == "DFS":
-                print(self.runDFS())
-            elif self.algorithm == "Greedy":
-                print(self.runGreedy())
-            elif self.algorithm == "AStar":
-                print(self.runAStarOnGrid())
-            else:
-                raise NotImplementedError
 
     def drawPathOnGrid(self, transition):
         traceNode = self.goal
@@ -540,6 +761,86 @@ class GraphicsScene(QGraphicsScene):
 
         return False
 
+    def drawPathOnGraph(self, transition):
+        traceNode = self.goal
+        while traceNode in transition:
+            preNode = transition[traceNode]
+            a, b = traceNode
+            i, j = preNode
+            lineItem = QGraphicsLineItem()
+            lineItem.setPen(QPen(QColor(0, 0, 255), 3))
+            lineItem.setLine(a, b, i, j)
+            self.path.append(lineItem)
+            self.addItem(lineItem)
+            traceNode = (i, j)
+
+    def runAStarOnGraph(self):
+        for lineItem in self.path:
+            self.removeItem(lineItem)
+
+        self.path.clear()
+
+        que = PriorityQueue()
+        que.put((0, self.start))
+
+        transition = dict()
+        g = dict()  # total length of a back-pointer path
+        g[self.start] = 0  # length from start point to itself is set to 0
+        visited = dict()
+        for key in self.graph.keys():
+            visited[key] = 0
+        visited[self.start] = 1
+
+        while not que.empty():
+            _, node = que.get()
+
+            # if node been visited, remove it from open set
+            if visited[node] > 1:
+                continue
+
+            if node == self.goal:  # if no more nodes with priority higher than this node, the optimal path was found
+                print("dist is ", g[node])
+                self.drawPathOnGraph(transition)
+                return True
+
+            a, b = node
+
+            # move to closed set
+            visited[node] += 1
+
+            # to distinguish between diagonal and axial neighbors
+            neighbors = self.graph[node]
+
+            for next_node, distance in neighbors:
+                # if in the open set
+                if visited[next_node] == 1:
+                    tmp = g[node] + distance
+                    # check and update g
+                    if tmp < g[next_node]:
+                        g[next_node] = tmp
+                        transition[next_node] = node
+
+                        # recompute the priority, add to open set
+                        # it is okay if the node was added multiple times
+                        # cause the newly added one has high priority
+                        h = np.linalg.norm(np.array(self.goal) - np.array(next_node))
+                        priority = h + g[next_node]
+
+                        que.put((priority, next_node))
+                # if not in the open set
+                elif visited[next_node] == 0:
+                    g[next_node] = g[node] + distance
+                    transition[next_node] = node
+
+                    # compute h, and priority, add to open set
+                    h = np.linalg.norm(np.array(self.goal) - np.array(next_node))
+                    priority = h + g[next_node]
+
+                    que.put((priority, next_node))
+                    visited[next_node] = 1
+
+        return False
+
 
 class CentralWidget(QWidget):
     def __init__(self, args):
@@ -557,6 +858,8 @@ class CentralWidget(QWidget):
         self.timer = QTimer(self)
         if args.algorithm in ["BFS", "DFS", "Greedy", "AStar"]:
             self.timer.timeout.connect(self.checkGridCollision)
+        elif args.algorithm == "PRM":
+            self.timer.timeout.connect(self.runNodeSampling)
         else:
             raise NotImplementedError
         self.timer.setInterval(0.0)
@@ -572,6 +875,29 @@ class CentralWidget(QWidget):
     def startDetection(self):
         self.timer.start()
 
+    def runNodeSampling(self):
+        isSamplingFinished = self.scene.runSampling(self.counter)
+        if isSamplingFinished:
+            self.counter = 0
+            self.timer.stop()
+            self.timer.timeout.disconnect(self.runNodeSampling)
+            self.timer.timeout.connect(self.runEdgeConnecting)
+            self.timer.start()
+        else:
+            self.counter += 1
+
+    def runEdgeConnecting(self):
+        isConstructionFinished = self.scene.connectEdge(self.counter)
+        if isConstructionFinished:
+            self.counter = 0
+            self.timer.stop()
+            self.timer.timeout.disconnect(self.runEdgeConnecting)
+        else:
+            self.counter += 1
+
+    def startGraphBuilding(self):
+        self.timer.start()
+
 
 class MainWindow(QMainWindow):
     def __init__(self, args):
@@ -580,6 +906,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.view)
         if args.algorithm in ["BFS", "DFS", "Greedy", "AStar"]:
             self.view.startDetection()
+        elif args.algorithm == "PRM":
+            self.view.startGraphBuilding()
         else:
             raise NotImplementedError
         self.statusBar().showMessage("Ready!")
@@ -588,7 +916,7 @@ class MainWindow(QMainWindow):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Simple Planner Animation.")
 
-    parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS", "DFS", "Greedy", "AStar"], help="Planning algorithm.")
+    parser.add_argument("--algorithm", type=str, default="BFS", choices=["BFS", "DFS", "Greedy", "AStar", "PRM"], help="Planning algorithm.")
 
     # Common
     parser.add_argument("--radius", type=float, default=6, help="Radius for the start and goal dot.")
@@ -596,6 +924,10 @@ if __name__ == '__main__':
     # Graph Search Based Methods (BFS, DFS, Greedy, AStar)
     parser.add_argument("--num_horizontal_grid", type=int, default=40, help="Number of grid for each row.")
     parser.add_argument("--num_vertical_grid", type=int, default=40, help="Number of grid for each column.")
+
+    # Sampling Based Methods (PRM)
+    parser.add_argument("--num_node", type=int, default=1000, help="Number of nodes to put in the roadmap.")
+    parser.add_argument("--num_nearest", type=int, default=4, help="Number of closest neighbors to examine for each configuration.")
 
     args = parser.parse_args()
 
