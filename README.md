@@ -10,7 +10,7 @@ There are two types of planning algorithms in this repo, namely, Graph Search Pl
 |              Algorithm               |         ScreenShot          |
 | :----------------------------------: | :-------------------------: |
 |      Breadth First Search (BFS)      |    ![BFS](./img/BFS.png)    |
-|       Depth First Search (BFS)       |    ![DFS](./img/DFS.png)    |
+|       Depth First Search (DFS)       |    ![DFS](./img/DFS.png)    |
 |        Greedy Search (Greedy)        | ![Greedy](./img/Greedy.png) |
 |                  A*                  |   ![A*](./img/AStar.png)    |
 |     Probabilistic Roadmap (PRM)      |    ![PRM](./img/PRM.png)    |
